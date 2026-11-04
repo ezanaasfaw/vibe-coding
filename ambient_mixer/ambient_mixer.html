@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ambient Mixer</title>
+<style>
+  :root{
+    --bg1:#0d1b26; --bg2:#1a2f3b; --ink:#e9f1f4; --sub:#8fa8b4; --card:rgba(255,255,255,.06);
+    --line:rgba(255,255,255,.12); --accent:#f0b45a;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg1:#dfeaee; --bg2:#c4d8df; --ink:#14262f; --sub:#46616d; --card:rgba(255,255,255,.65);
+      --line:rgba(20,38,47,.15); --accent:#b66a00; }
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; padding:32px 16px 48px; color:var(--ink);
+    background:linear-gradient(160deg,var(--bg1),var(--bg2)) fixed;
+    font-family:system-ui,"Segoe UI",sans-serif; display:flex; justify-content:center;
+  }
+  main{width:min(560px,100%)}
+  h1{font-family:Georgia,"Times New Roman",serif; font-weight:400; font-size:2.2rem; margin:0 0 4px}
+  .sub{margin:0 0 22px; color:var(--sub)}
+  .row{display:flex; align-items:center; gap:14px; background:var(--card); border:1px solid var(--line);
+    border-radius:16px; padding:14px 16px; margin-bottom:10px}
+  .icon{font-size:1.8rem; width:2.2rem; text-align:center}
+  .meta{flex:0 0 120px}
+  .meta b{display:block}
+  .meta span{font-size:.82rem; color:var(--sub)}
+  input[type=range]{flex:1; accent-color:var(--accent); height:28px}
+  .val{width:2.6rem; text-align:right; color:var(--sub); font-variant-numeric:tabular-nums}
+  .bar{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:18px 0}
+  button, select{
+    font:inherit; color:var(--ink); background:var(--card); border:1px solid var(--line);
+    border-radius:999px; padding:8px 16px; cursor:pointer;
+  }
+  select{color-scheme:dark}
+  select option{background:#1a2f3b; color:#e9f1f4}
+  @media (prefers-color-scheme: light){
+    select{color-scheme:light}
+    select option{background:#ffffff; color:#14262f}
+  }
+  button:hover{border-color:var(--accent)}
+  button:focus-visible, select:focus-visible, input:focus-visible{outline:3px solid var(--accent); outline-offset:2px}
+  #play{background:var(--accent); color:#1a1205; border-color:var(--accent); font-weight:700; padding:10px 28px}
+  .label{color:var(--sub); font-size:.9rem; margin-right:4px}
+  #status{color:var(--sub); font-size:.9rem; min-height:1.3em}
+</style>
+</head>
+<body>
+<main>
+  <h1>Ambient Mixer</h1>
+  <p class="sub">Blend your own background sound. Everything is generated live, with no audio files.</p>
+
+  <div id="rows"></div>
+
+  <div class="bar">
+    <span class="label">Presets</span>
+    <button data-p="storm">Stormy night</button>
+    <button data-p="beach">Beach</button>
+    <button data-p="focus">Focus</button>
+    <button data-p="off">Silence</button>
+  </div>
+
+  <div class="bar">
+    <button id="play">Play</button>
+    <span class="label">Sleep timer</span>
+    <select id="sleep" aria-label="Sleep timer">
+      <option value="0">Off</option>
+      <option value="15">15 minutes</option>
+      <option value="30">30 minutes</option>
+      <option value="60">60 minutes</option>
+    </select>
+  </div>
+  <div id="status" role="status"></div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const defs = [
+  {id:'rain',  icon:'🌧️', name:'Rain',    note:'steady and soft',     scale:.5},
+  {id:'wind',  icon:'🌬️', name:'Wind',    note:'slow gusts',          scale:1.1},
+  {id:'waves', icon:'🌊', name:'Waves',   note:'rolling in and out',  scale:1.3},
+  {id:'hum',   icon:'🔔', name:'Low hum', note:'warm and steady',     scale:.35}
+];
+const presets = {
+  storm: {rain:.75, wind:.5,  waves:0,  hum:.25},
+  beach: {rain:0,   wind:.3,  waves:.8, hum:0},
+  focus: {rain:.4,  wind:0,   waves:0,  hum:.3},
+  off:   {rain:0,   wind:0,   waves:0,  hum:0}
+};
+const level = {rain:0, wind:0, waves:0, hum:0};
+let ctx = null, master, buf, chan = {}, playing = false, sleepTimer = 0;
+
+// Build the sliders
+$('rows').innerHTML = defs.map(d => `
+  <div class="row">
+    <div class="icon" aria-hidden="true">${d.icon}</div>
+    <div class="meta"><b>${d.name}</b><span>${d.note}</span></div>
+    <input type="range" min="0" max="100" value="0" id="s_${d.id}" aria-label="${d.name} volume">
+    <div class="val" id="v_${d.id}">0</div>
+  </div>`).join('');
+
+defs.forEach(d => {
+  $('s_' + d.id).addEventListener('input', e => {
+    level[d.id] = e.target.value / 100;
+    $('v_' + d.id).textContent = e.target.value;
+    apply(d);
+  });
+});
+
+function apply(d){
+  if (ctx) chan[d.id].gain.setTargetAtTime(level[d.id] * d.scale, ctx.currentTime, .1);
+}
+function setLevels(p){
+  defs.forEach(d => {
+    level[d.id] = p[d.id];
+    $('s_' + d.id).value = Math.round(p[d.id] * 100);
+    $('v_' + d.id).textContent = Math.round(p[d.id] * 100);
+    apply(d);
+  });
+}
+document.querySelectorAll('[data-p]').forEach(b => b.addEventListener('click', () => setLevels(presets[b.dataset.p])));
+
+// Sound generation
+function noise(){ const s = ctx.createBufferSource(); s.buffer = buf; s.loop = true; s.start(); return s; }
+function lfo(freq, depth, param){
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.frequency.value = freq; g.gain.value = depth;
+  o.connect(g); g.connect(param); o.start();
+}
+function init(){
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  master = ctx.createGain(); master.gain.value = .8; master.connect(ctx.destination);
+  const n = ctx.sampleRate * 2;
+  buf = ctx.createBuffer(1, n, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) data[i] = Math.random() * 2 - 1;
+  defs.forEach(d => { const g = ctx.createGain(); g.gain.value = 0; g.connect(master); chan[d.id] = g; });
+
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1200;
+  noise().connect(hp); hp.connect(chan.rain);
+
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 600; bp.Q.value = .7;
+  noise().connect(bp); bp.connect(chan.wind); lfo(.12, 300, bp.frequency);
+
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 450;
+  const swell = ctx.createGain(); swell.gain.value = .55;
+  noise().connect(lp); lp.connect(swell); swell.connect(chan.waves); lfo(.09, .45, swell.gain);
+
+  [110, 165.5].forEach(f => {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.value = f; g.gain.value = .5; o.connect(g); g.connect(chan.hum); o.start();
+  });
+  defs.forEach(apply);
+}
+
+$('play').addEventListener('click', async () => {
+  if (!ctx) init();
+  if (playing) { await ctx.suspend(); playing = false; }
+  else { await ctx.resume(); playing = true; }
+  $('play').textContent = playing ? 'Pause' : 'Play';
+});
+
+$('sleep').addEventListener('change', e => {
+  clearTimeout(sleepTimer);
+  const mins = Number(e.target.value);
+  if (!mins) { $('status').textContent = ''; return; }
+  $('status').textContent = 'Sound will fade out in ' + mins + ' minutes.';
+  sleepTimer = setTimeout(() => {
+    if (!ctx) return;
+    master.gain.setTargetAtTime(0, ctx.currentTime, 4);
+    setTimeout(async () => {
+      await ctx.suspend();
+      master.gain.value = .8;
+      playing = false;
+      $('play').textContent = 'Play';
+      $('sleep').value = '0';
+      $('status').textContent = 'Faded out. Sleep well.';
+    }, 12000);
+  }, mins * 60000);
+});
+</script>
+</body>
+</html>

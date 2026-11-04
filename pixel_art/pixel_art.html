@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pixel Art Studio</title>
+<style>
+  :root{
+    --bg:#e9f1ee; --ink:#1d2a2a; --sub:#5a6e6c; --card:#ffffff; --line:#c9d8d4; --accent:#e0457b;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#171c1e; --ink:#ecf3f1; --sub:#92a7a3; --card:#222a2d; --line:#344044; }
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; padding:24px 16px 40px; background:var(--bg); color:var(--ink);
+    font-family:system-ui,"Segoe UI",sans-serif; display:flex; flex-direction:column; align-items:center; gap:16px;
+  }
+  h1{margin:0; font-family:"Courier New",monospace; font-size:1.7rem; letter-spacing:-0.03em}
+  .sub{margin:0; color:var(--sub)}
+  .studio{display:flex; flex-wrap:wrap; gap:20px; justify-content:center; width:min(760px,100%)}
+  #cv{
+    width:min(384px,92vw); height:auto; aspect-ratio:1; border-radius:8px; border:2px solid var(--ink);
+    cursor:crosshair; touch-action:none; image-rendering:pixelated; background:#fff;
+  }
+  .panel{flex:1 1 260px; max-width:340px; display:flex; flex-direction:column; gap:14px}
+  .group{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px}
+  .group h2{margin:0 0 8px; font-size:.95rem; color:var(--sub); font-weight:600}
+  .btns{display:flex; flex-wrap:wrap; gap:6px}
+  button{
+    font:inherit; font-size:.9rem; color:var(--ink); background:var(--bg); border:1px solid var(--line);
+    border-radius:8px; padding:7px 12px; cursor:pointer;
+  }
+  button:hover{border-color:var(--accent)}
+  button[aria-pressed="true"]{background:var(--accent); border-color:var(--accent); color:#fff}
+  button:focus-visible,input:focus-visible{outline:3px solid var(--accent); outline-offset:2px}
+  #palette{display:grid; grid-template-columns:repeat(8,1fr); gap:5px}
+  .sw{aspect-ratio:1; border-radius:6px; border:2px solid transparent; padding:0}
+  .sw.on{border-color:var(--ink); box-shadow:0 0 0 2px var(--card) inset}
+  .custom{display:flex; align-items:center; gap:8px; margin-top:10px; font-size:.9rem; color:var(--sub)}
+  input[type=color]{width:42px; height:30px; border:1px solid var(--line); border-radius:6px; padding:0; background:none}
+  #dl{background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700}
+</style>
+</head>
+<body>
+  <h1>Pixel Art Studio</h1>
+  <p class="sub">Draw on a 16×16 grid. Your art saves automatically in this browser.</p>
+
+  <div class="studio">
+    <canvas id="cv" aria-label="Pixel art canvas"></canvas>
+
+    <div class="panel">
+      <div class="group">
+        <h2>Tools</h2>
+        <div class="btns" id="tools">
+          <button data-t="pencil" aria-pressed="true">Pencil</button>
+          <button data-t="eraser" aria-pressed="false">Eraser</button>
+          <button data-t="fill" aria-pressed="false">Fill</button>
+          <button data-t="pick" aria-pressed="false">Pick color</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <h2>Colors</h2>
+        <div id="palette"></div>
+        <label class="custom">Custom <input type="color" id="custom" value="#e0457b"></label>
+      </div>
+
+      <div class="group">
+        <h2>Options</h2>
+        <div class="btns">
+          <button id="grid" aria-pressed="true">Grid</button>
+          <button id="mirror" aria-pressed="false">Mirror</button>
+          <button id="undo">Undo</button>
+          <button id="clear">Clear</button>
+        </div>
+      </div>
+
+      <button id="dl">Download PNG</button>
+    </div>
+  </div>
+
+<script>
+const $ = id => document.getElementById(id);
+const N = 16, S = 24;
+const cv = $('cv'), cx = cv.getContext('2d');
+cv.width = cv.height = N * S;
+
+const colors = ['#1a1c2c','#5d275d','#b13e53','#ef7d57','#ffcd75','#a7f070','#38b764','#257179',
+                '#29366f','#3b5dc9','#41a6f6','#73eff7','#f4f4f4','#94b0c2','#566c86','#333c57'];
+let px = Array(N * N).fill(null), tool = 'pencil', color = '#e0457b', grid = true, mirror = false;
+let undo = [], drawing = false;
+
+try {
+  const saved = JSON.parse(localStorage.getItem('px_art'));
+  if (Array.isArray(saved) && saved.length === N * N) px = saved;
+} catch (e) {}
+
+function save(){ try { localStorage.setItem('px_art', JSON.stringify(px)); } catch (e) {} }
+
+function draw(){
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    cx.fillStyle = (x + y) % 2 ? '#d9d9de' : '#f1f1f4';
+    cx.fillRect(x * S, y * S, S, S);
+    const c = px[y * N + x];
+    if (c) { cx.fillStyle = c; cx.fillRect(x * S, y * S, S, S); }
+  }
+  if (grid) {
+    cx.strokeStyle = 'rgba(0,0,0,.2)'; cx.lineWidth = 1; cx.beginPath();
+    for (let i = 0; i <= N; i++) {
+      cx.moveTo(i * S + .5, 0); cx.lineTo(i * S + .5, N * S);
+      cx.moveTo(0, i * S + .5); cx.lineTo(N * S, i * S + .5);
+    }
+    cx.stroke();
+  }
+}
+
+function cellAt(e){
+  const r = cv.getBoundingClientRect();
+  return [Math.floor((e.clientX - r.left) / r.width * N), Math.floor((e.clientY - r.top) / r.height * N)];
+}
+function setPx(x, y, c){ if (x >= 0 && y >= 0 && x < N && y < N) px[y * N + x] = c; }
+function paint(x, y){
+  const c = tool === 'eraser' ? null : color;
+  setPx(x, y, c);
+  if (mirror) setPx(N - 1 - x, y, c);
+}
+function flood(x, y, c){
+  const target = px[y * N + x];
+  if (target === c) return;
+  const stack = [[x, y]];
+  while (stack.length) {
+    const [a, b] = stack.pop();
+    if (a < 0 || b < 0 || a >= N || b >= N || px[b * N + a] !== target) continue;
+    px[b * N + a] = c;
+    stack.push([a + 1, b], [a - 1, b], [a, b + 1], [a, b - 1]);
+  }
+}
+function snapshot(){ undo.push(px.slice()); if (undo.length > 40) undo.shift(); }
+
+cv.addEventListener('pointerdown', e => {
+  const [x, y] = cellAt(e);
+  if (x < 0 || y < 0 || x >= N || y >= N) return;
+  snapshot();
+  if (tool === 'fill') flood(x, y, color);
+  else if (tool === 'pick') {
+    const c = px[y * N + x];
+    if (c) { color = c; $('custom').value = c; markSwatch(); }
+    setTool('pencil');
+  } else { drawing = true; cv.setPointerCapture(e.pointerId); paint(x, y); }
+  draw(); save();
+});
+cv.addEventListener('pointermove', e => {
+  if (!drawing) return;
+  const [x, y] = cellAt(e);
+  paint(x, y); draw();
+});
+['pointerup', 'pointercancel'].forEach(t => cv.addEventListener(t, () => { if (drawing) { drawing = false; save(); } }));
+
+function setTool(t){
+  tool = t;
+  document.querySelectorAll('#tools button').forEach(b => b.setAttribute('aria-pressed', b.dataset.t === t));
+}
+document.querySelectorAll('#tools button').forEach(b => b.addEventListener('click', () => setTool(b.dataset.t)));
+
+$('palette').innerHTML = colors.map(c => `<button class="sw" style="background:${c}" data-c="${c}" aria-label="Color ${c}"></button>`).join('');
+function markSwatch(){ document.querySelectorAll('.sw').forEach(s => s.classList.toggle('on', s.dataset.c === color)); }
+document.querySelectorAll('.sw').forEach(s => s.addEventListener('click', () => {
+  color = s.dataset.c; $('custom').value = color; markSwatch();
+  if (tool === 'eraser' || tool === 'pick') setTool('pencil');
+}));
+$('custom').addEventListener('input', e => { color = e.target.value; markSwatch(); if (tool === 'eraser') setTool('pencil'); });
+
+$('grid').addEventListener('click', e => { grid = !grid; e.target.setAttribute('aria-pressed', grid); draw(); });
+$('mirror').addEventListener('click', e => { mirror = !mirror; e.target.setAttribute('aria-pressed', mirror); });
+$('undo').addEventListener('click', () => { if (undo.length) { px = undo.pop(); draw(); save(); } });
+$('clear').addEventListener('click', () => { snapshot(); px = Array(N * N).fill(null); draw(); save(); });
+
+$('dl').addEventListener('click', () => {
+  const out = document.createElement('canvas');
+  out.width = out.height = N * 32;
+  const o = out.getContext('2d');
+  o.imageSmoothingEnabled = false;
+  px.forEach((c, i) => { if (c) { o.fillStyle = c; o.fillRect((i % N) * 32, Math.floor(i / N) * 32, 32, 32); } });
+  const a = document.createElement('a');
+  a.href = out.toDataURL('image/png');
+  a.download = 'pixel-art.png';
+  a.click();
+});
+
+markSwatch();
+draw();
+</script>
+</body>
+</html>

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reaction Test</title>
+<style>
+  :root{
+    --bg:#eceef6; --ink:#171a33; --sub:#5d6280; --card:#ffffff; --line:#d9dcec;
+    --idle:#2f4bd8; --wait:#d23b4a; --go:#1c9a57; --soon:#c47a00;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#12142a; --ink:#eef0ff; --sub:#9aa0c8; --card:#1b1e3a; --line:#2c3058; }
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; display:flex; flex-direction:column; align-items:center;
+    gap:18px; padding:28px 16px 40px; background:var(--bg); color:var(--ink);
+    font-family:"Avenir Next","Segoe UI",system-ui,sans-serif;
+  }
+  h1{margin:0; font-size:1.7rem; letter-spacing:-0.02em}
+  .sub{margin:0; color:var(--sub)}
+  #pad{
+    width:min(600px,100%); height:320px; border:none; border-radius:22px; cursor:pointer;
+    color:#fff; font:inherit; font-size:2rem; font-weight:800; padding:20px; text-align:center;
+    transition:background .12s; touch-action:manipulation; -webkit-tap-highlight-color:transparent;
+  }
+  #pad small{display:block; margin-top:10px; font-size:1rem; font-weight:500; opacity:.92}
+  #pad:focus-visible{outline:4px solid var(--ink); outline-offset:4px}
+  #pad.idle,#pad.result{background:var(--idle)}
+  #pad.wait{background:var(--wait)}
+  #pad.go{background:var(--go)}
+  #pad.soon{background:var(--soon)}
+  .stats{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; width:min(600px,100%)}
+  .stat{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 8px; text-align:center}
+  .stat b{display:block; font-size:1.4rem}
+  .stat span{font-size:.85rem; color:var(--sub)}
+  ol{margin:0; padding:0; list-style:none; display:flex; flex-wrap:wrap; gap:6px; justify-content:center; width:min(600px,100%)}
+  li{background:var(--card); border:1px solid var(--line); border-radius:999px; padding:4px 12px; font-size:.85rem}
+  .link{background:none; border:none; color:var(--sub); text-decoration:underline; cursor:pointer; font:inherit; font-size:.85rem}
+</style>
+</head>
+<body>
+  <h1>Reaction Test</h1>
+  <p class="sub">Wait for green, then click as fast as you can.</p>
+
+  <button id="pad" class="idle"></button>
+
+  <div class="stats">
+    <div class="stat"><b id="last">–</b><span>Last</span></div>
+    <div class="stat"><b id="avg">–</b><span>Average of last 5</span></div>
+    <div class="stat"><b id="best">–</b><span>Best ever</span></div>
+  </div>
+
+  <ol id="hist"></ol>
+  <button class="link" id="reset">Reset best score</button>
+
+<script>
+const $ = id => document.getElementById(id);
+const pad = $('pad');
+let state = 'idle', timer = 0, startT = 0, times = [], best = null;
+
+try { const b = JSON.parse(localStorage.getItem('rt_best')); if (typeof b === 'number') best = b; } catch (e) {}
+
+function setPad(cls, main, sub){
+  state = cls;
+  pad.className = cls;
+  pad.innerHTML = main + '<small>' + sub + '</small>';
+}
+function rating(ms){
+  return ms < 200 ? 'Lightning fast' : ms < 250 ? 'Sharp' : ms < 320 ? 'Pretty average' : 'Warming up';
+}
+function render(){
+  $('last').textContent = times.length ? times[times.length - 1] + ' ms' : '–';
+  const r = times.slice(-5);
+  $('avg').textContent = r.length ? Math.round(r.reduce((a, b) => a + b, 0) / r.length) + ' ms' : '–';
+  $('best').textContent = best !== null ? best + ' ms' : '–';
+  $('hist').innerHTML = times.slice(-10).reverse().map(t => '<li>' + t + ' ms</li>').join('');
+}
+function start(){
+  setPad('wait', 'Wait…', 'Don’t click yet');
+  timer = setTimeout(() => {
+    startT = performance.now();
+    setPad('go', 'Click!', '');
+  }, 1500 + Math.random() * 2500);
+}
+pad.addEventListener('click', () => {
+  if (state === 'idle' || state === 'result' || state === 'soon') {
+    start();
+  } else if (state === 'wait') {
+    clearTimeout(timer);
+    setPad('soon', 'Too soon!', 'Click to try again');
+  } else if (state === 'go') {
+    const ms = Math.round(performance.now() - startT);
+    times.push(ms);
+    if (best === null || ms < best) {
+      best = ms;
+      try { localStorage.setItem('rt_best', JSON.stringify(best)); } catch (e) {}
+    }
+    setPad('result', ms + ' ms', rating(ms) + ' · click to go again');
+    render();
+  }
+});
+$('reset').addEventListener('click', () => {
+  best = null;
+  try { localStorage.removeItem('rt_best'); } catch (e) {}
+  render();
+});
+
+setPad('idle', 'Click to start', 'Then wait for green');
+render();
+</script>
+</body>
+</html>
